@@ -1,5 +1,6 @@
 #import tensorflow as tf
 import collections
+import pandas as pd
 
 class User():
     def __init__(self,name,age):
@@ -13,7 +14,8 @@ class User():
 def b():
     return 3
 
-
+def pad(x,fill):
+    return pd.DataFrame.from_dict(x).fillna(fill).values
 
 if __name__ == '__main__':
     user = User('a',1)
@@ -48,3 +50,19 @@ if __name__ == '__main__':
         for k ,v in result.items():
             metric_val[k].append(v)
     print(metric_vals)
+
+    amount = 1000000
+    rate = 0.03
+    for i in range(10):
+        i += 1
+        amount = amount * (1 + rate)
+
+    print(amount)
+
+    movies = pd.DataFrame({'movie_id': [1,2,3,3]})
+    for movie_id in movies['movie_id'].values:
+        print(movie_id)
+
+    movies_arr = [1,2,3,3]
+    movies_pad = pad(movies_arr,'')
+    print(movies_pad)

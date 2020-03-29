@@ -1,5 +1,6 @@
 #the code was rewrite with tensorflow2.0
-#tensorflow implementation of collaborate filter recommendation system
+#tensorflow implementation of collaborate filter recommendation system and softmax for rs
+#google colab url:https://colab.research.google.com/github/google/eng-edu/blob/master/ml/recommendation-systems/recommendation-systems.ipynb?utm_source=ss-recommendation-systems&utm_campaign=colab-external&utm_medium=referral&utm_content=recommendation-systems
 from __future__ import print_function
 
 import numpy as np
@@ -228,7 +229,7 @@ def sparse_mean_square_error(sparse_rating,user_embedings,movie_embedings):
         tf.gather(user_embedings,sparse_rating.indices[:,0]) *
         tf.gather(movie_embedings,sparse_rating.indices[:,1]),axis=1
     )
-    loss = tf.losses.mean_absolute_error(sparse_rating.values,prediction)
+    loss = tf.losses.mean_squared_error(sparse_rating.values,prediction)
     return loss
 
 class CFModel():
@@ -313,7 +314,7 @@ model = build_model(ratings,embedding_dim=30,init_stddev=0.5)
 model.train(num_iterations=100,learning_rate=10.)
 
 DOT = 'dot'
-COSIONE = 'cosine'
+COSINE = 'cosine'
 def compute_score(query_embedding,item_embeddings,measure=DOT):
     """
     Computes the scores of the candidates given a query.
@@ -328,7 +329,7 @@ def compute_score(query_embedding,item_embeddings,measure=DOT):
     """
     u = query_embedding
     V = item_embeddings
-    if measure == COSIONE:
+    if measure == COSINE:
         u = u / np.linalg.norm(u)
         V = V / np.linalg.norm(V, axis=1, keepdims=True)
 
@@ -372,4 +373,122 @@ def movie_neighbors(movie_title,model,meansure=DOT,k=6):
 
 user_recommendation(940, model, exclude_rated=True)
 movie_neighbors("Aladdin", model, DOT)
-movie_neighbors("Aladdin", model, COSIONE)
+movie_neighbors("Aladdin", model, COSINE)
+
+
+def movie_embedding_norm(models):
+    """Visualizes the norm and number of ratings of the movie embeddings.
+    Args:
+      model: A MFModel object.
+    """
+    if not isinstance(models, list):
+        models = [models]
+    df = pd.DataFrame({
+        'title': movies['title'],
+        'genre': movies['genre'],
+        'num_ratings': movies_ratings['rating count'],
+    })
+    charts = []
+    brush = alt.selection_interval()
+    for i, model in enumerate(models):
+        norm_key = 'norm' + str(i)
+        df[norm_key] = np.linalg.norm(model.embeddings["movie_id"], axis=1)
+        nearest = alt.selection(
+            type='single', encodings=['x', 'y'], on='mouseover', nearest=True,
+            empty='none')
+        base = alt.Chart().mark_circle().encode(
+            x='num_ratings',
+            y=norm_key,
+            color=alt.condition(brush, alt.value('#4c78a8'), alt.value('lightgray'))
+        ).properties(
+            selection=nearest).add_selection(brush)
+        text = alt.Chart().mark_text(align='center', dx=5, dy=-5).encode(
+            x='num_ratings', y=norm_key,
+            text=alt.condition(nearest, 'title', alt.value('')))
+        charts.append(alt.layer(base, text))
+    return alt.hconcat(*charts, data=df)
+
+
+def visualize_movie_embeddings(data, x, y):
+    nearest = alt.selection(
+        type='single', encodings=['x', 'y'], on='mouseover', nearest=True,
+        empty='none')
+    base = alt.Chart().mark_circle().encode(
+        x=x,
+        y=y,
+        color=alt.condition(genre_filter, "genre", alt.value("whitesmoke")),
+    ).properties(
+        width=600,
+        height=600,
+        selection=nearest)
+    text = alt.Chart().mark_text(align='left', dx=5, dy=-5).encode(
+        x=x,
+        y=y,
+        text=alt.condition(nearest, 'title', alt.value('')))
+    return alt.hconcat(alt.layer(base, text), genre_chart, data=data)
+
+
+def tsne_movie_embeddings(model):
+    """Visualizes the movie embeddings, projected using t-SNE with Cosine measure.
+    Args:
+      model: A MFModel object.
+    """
+    tsne = sklearn.manifold.TSNE(
+        n_components=2, perplexity=40, metric='cosine', early_exaggeration=10.0,
+        init='pca', verbose=True, n_iter=400)
+
+    print('Running t-SNE...')
+    V_proj = tsne.fit_transform(model.embeddings["movie_id"])
+    movies.loc[:, 'x'] = V_proj[:, 0]
+    movies.loc[:, 'y'] = V_proj[:, 1]
+    return visualize_movie_embeddings(movies, 'x', 'y')
+
+movie_embedding_norm(model)
+
+model_lowinit = build_model(ratings, embedding_dim=30, init_stddev=0.05)
+model_lowinit.train(num_iterations=100, learning_rate=10.)
+movie_neighbors("Aladdin", model_lowinit, DOT)
+movie_neighbors("Aladdin", model_lowinit, COSINE)
+movie_embedding_norm([model, model_lowinit])
+
+
+def gravity(U, V):
+    return 1 / (U.shape[0].value * V.shape[0].value) * tf.reduce_sum(
+        tf.matmul(U, U, transpose_a=True) * tf.matmul(V, V, transpose_a=True)
+    )
+
+def build_regularized_model(ratings_df, embedding_dim=3, regularization_coeff=.1, gravity_coeff=1., init_stddev=0.1):
+    #Split the ratings DataFrame into train and test
+    train,test = split_dataframe(ratings_df)
+    train_sparse_tensor = build_rating_sparse_tensor(train)
+    test_sparse_tensor = build_rating_sparse_tensor(test)
+
+    U = tf.Variable(tf.random.normal([train_sparse_tensor.dense_shape[0], embedding_dim], stddev=init_stddev))
+    V = tf.Variable(tf.random.normal([train_sparse_tensor.dense_shape[1], embedding_dim], stddev=init_stddev))
+
+    error_train = sparse_mean_square_error(train_sparse_tensor, U, V)
+    error_test = sparse_mean_square_error(test_sparse_tensor, U, V)
+
+    gravity_loss = gravity_coeff * gravity(U, V)
+    regularization_loss = regularization_coeff * (tf.reduce_sum(U * U) / U.shape[0].value +
+                                                  tf.reduce_sum(V * V) / V.shape[0].value)
+    total_loss = error_train + gravity_loss + regularization_loss
+    losses = {'train_error_observed': error_train, 'test_error_observed': error_test}
+    loss_components = {
+        'observed_loss': error_train,
+        'regularization_loss': regularization_loss,
+        'gravity_loss': gravity_loss,
+    }
+    embeddings = {'user_id': U, 'movie_id': V}
+
+    return CFModel(embeddings,total_loss,[losses,loss_components])
+
+
+reg_model = build_regularized_model(ratings, regularization_coeff=0.1, gravity_coeff=1.0, embedding_dim=35,
+                                    init_stddev=0.05)
+reg_model.train(num_iterations=200, learning_rate=20.)
+user_recommendation(940, reg_model, DOT, exclude_rated=True, k=10)
+movie_embedding_norm([model, model_lowinit, reg_model])
+
+tsne_movie_embeddings(model_lowinit)
+tsne_movie_embeddings(reg_model)
