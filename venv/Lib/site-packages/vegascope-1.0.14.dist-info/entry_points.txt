@@ -1,0 +1,3 @@
+[altair.vegalite.v3.renderer]
+vegascope = vegascope:_vegalite_renderer_entry_point
+

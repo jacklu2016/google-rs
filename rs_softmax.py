@@ -243,6 +243,7 @@ class CFModel():
 
     def train(self,num_iterations=100,learning_rate=1.0,plot_results=True,
               optimizer=tf.compat.v1.train.GradientDescentOptimizer):
+
         with self._loss.graph.as_default():
             opt = optimizer(learning_rate)
             train_op = opt.minimize(self._loss)
@@ -255,7 +256,14 @@ class CFModel():
                     self._session.run(tf.compat.v1.tables_initializer())
                     tf.compat.v1.train.start_queue_runners()
 
-            with self._session.as_default():
+            with self._session.as_default() as sess:
+                variable_names = [v.name for v in tf.trainable_variables()]
+                values = sess.run(variable_names)
+                for k, v in zip(variable_names, values):
+                    print("Variable: ", k)
+                    print("Shape: ", v.shape)
+                    print(v)
+
                 local_init_op.run()
                 iterations = []
                 metrics = self._metrics or ({},)
@@ -275,7 +283,8 @@ class CFModel():
 
                 for k, v in self._embedding_vars.items():
                     self._embeddings[k] = v.eval()
-
+                print('=' * 20 + 'embedding:' + '=' * 20)
+                print(self._embeddings)
                 if plot_results:
                     num_subplots = len(metrics) + 1
                     fig = plt.figure()
@@ -502,19 +511,7 @@ def make_batch(rating_movies, batch_size):
     year = []
     genre = []
     label = []
-    # for movie_ids in rating_movies['movie_id'].values:
-    #     movie.append(movie_ids)
-    #     year.append([year_dict[movie_id] for movie_id in movie_ids])
-    #     genre.append([x for movie_id in movie_ids for x in genres_dict[movie_id]])
-    #     label.append([int(movie_id) for movie_id in movie_ids])
-    #
-    #
-    # features = {
-    #     'movie_id': pad(movie,''),
-    #     'year': pad(year, ''),
-    #     'genre': pad(genre, ''),
-    #     'label': pad(label, -1)
-    # }
+
     for movie_ids in rating_movies["movie_id"].values:
         movie.append(movie_ids)
         genre.append([x for movie_id in movie_ids for x in genres_dict[movie_id]])
@@ -529,14 +526,6 @@ def make_batch(rating_movies, batch_size):
     }
     print(features['movie_id'],features['year'],features['genre'],features['label'])
 
-    # batch = (
-    #     tf.data.Dataset.from_tensor_slices(features)
-    #     .shuffle(1000)
-    #     .repeat()
-    #     .batch(batch_size)
-    #     .make_one_shot_iterator()
-    #     .get_next()
-    # )
     tf.data.Dataset.from_tensor_slices(features)
     batch = (
         tf.data.Dataset.from_tensor_slices(features)
@@ -547,20 +536,6 @@ def make_batch(rating_movies, batch_size):
             .get_next())
     return batch
 
-# def select_random(x):
-#     """Selectes a random elements from each row of x."""
-#     def to_float(x):
-#         return tf.cast(x,tf.float32)
-#
-#     def to_int(x):
-#         return tf.cast(x,tf.int64)
-#
-#     batch_size = tf.shape(x)[0]
-#     rn = tf.range(batch_size)
-#     nnz = to_float(tf.count_nonzero(x >= 0, axis=1))
-#     rnd = tf.random_uniform([batch_size])
-#     ids = tf.stack([to_int(rn), to_int(nnz * rnd)], axis=1)
-#     return to_int(tf.gather_nd(x, ids))
 def select_random(x):
   """Selectes a random elements from each row of x."""
   def to_float(x):
@@ -592,9 +567,6 @@ def softmax_loss(user_embeddings, movie_embeddings, labels):
             "The user embedding dimension %d should match the movie embedding "
             "dimension % d" % (user_emb_dim, movie_emb_dim))
 
-    # logits = tf.matmul(user_embeddings, movie_embeddings, transpose_b=True)
-    # loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=labels))
-    # return loss
     logits = tf.matmul(user_embeddings, movie_embeddings, transpose_b=True)
     loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
         logits=logits, labels=labels))
@@ -636,16 +608,6 @@ def build_softmax_model(rated_movies, embedding_cols, hidden_dims):
     train_batch = make_batch(train_rated_movie, 200)
     test_batch = make_batch(test_rated_movie, 100)
 
-    # with tf.variable_scope('model', reuse=False):
-    #     #Train
-    #     train_user_embedding = create_network(features=train_batch)
-    #     train_label = select_random(train_batch['label'])
-    #
-    # with tf.variable_scope('model', reuse=True):
-    #     #Test
-    #     test_user_embedding = create_network(features=test_batch)
-    #     test_label = select_random(test_batch['label'])
-    #     movie_embeddings = tf.get_variable('input_layer/movie_id_embedding/embedding_weights')
     with tf.variable_scope("model", reuse=False):
         # Train
         train_user_embeddings = create_network(train_batch)
@@ -684,7 +646,7 @@ with tf.Graph().as_default():
                                             make_embedding_col('genre', 3),
                                             make_embedding_col('year', 2),
                                         ],
-                                        hidden_dims=[35])
+                                        hidden_dims=[30,35])
 
 softmax_model.train(learning_rate=8., num_iterations=300, optimizer=tf.train.AdagradOptimizer)
 
