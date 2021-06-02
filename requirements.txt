@@ -104,7 +104,7 @@ traitlets==4.3.3
 tushare==1.2.54
 twine==3.1.1
 typing==3.7.4.1
-urllib3==1.25.8
+urllib3==1.26.5
 ushlex==0.99.1
 vega==3.1.0
 vega-datasets==0.8.0
